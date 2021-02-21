@@ -6,13 +6,17 @@ This probably works with many UART cables, not just FTDI.
 
 The program requires raw audio samples in a suitable samplerate to work.
 
-For PDM and 64-bits PWM you may calculate it as follows:
+The sample rate is calculated like this:
+
+`baudrate / 10 * 8 / output_bits_per_sample`
+
+For PDM and 64-bits PWM, this gives:
 
 `baudrate / 10 * 8 / 64`
 
 Example: 3MBaud = 3000000 / 10 * 8 / 64 = 37500
 
-For 32-bits PWM half the double sample rate is required, i.e:
+For 32-bits PWM:
 
 `baudrate / 10 * 8 / 32`
 
