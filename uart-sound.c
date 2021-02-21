@@ -49,8 +49,7 @@ int main(int argc, char *argv[])
 
     // Ugly, don't judge.
     char cmd[1024];
-    // sprintf(cmd, "stty -F %s %d cs8 -cstopb -parity -icanon min 1 time 1", tty, baudrate);
-    sprintf(cmd, "stty -F %s %d raw -clocal -echo icrnl", tty, baudrate);
+    snprintf(cmd, 1023, "stty -F %s %d raw -clocal -echo icrnl", tty, baudrate);
     puts(cmd);
     system(cmd);
 
@@ -84,25 +83,39 @@ int main(int argc, char *argv[])
         int16_t sample = audio_buffer[i];
 
         if (mode == MODE_PDM) {
-            // Emulate a 17 bit PDM buffer
+            // Emulate PDM
             int k_iter = 8;
             for (k = 0; k < k_iter; k++) {
                 uint8_t out = 0;
-                // int limit = 1 << 7;
+
+                // int limit = 1 << 8;
                 int limit = 1 << 16;
+                // int limit = 1 << 31;
+
                 for (j = 0; j < 8; j++) {
-                    if (pdm > (limit - 1)) {
+                    if (pdm >= limit) {
                         pdm -= limit;
                         // pdm = -limit - pdm;
-                    } else if (pdm < -(limit - 1)) {
+                    } else if (pdm <= -limit) {
                         pdm += limit;
                         // pdm = limit + pdm;
                     }
-                    pdm = (pdm & 0xffff) + ((uint16_t)(sample + (1 << 15)));
 
-                    // Store LSB
-                    int pdm_on = !!(pdm & (1 << 16));
+                    // 9 bit
+                    // pdm = (pdm & 0xff) + (((uint16_t)(sample + (1 << 15))) >> 8);
+
+                    // 17 bit
+                    pdm = (pdm & (limit - 1)) + ((uint16_t)(sample + (1 << 15)));
+
+                    // 32 bit
+                    // pdm = (pdm & (limit - 1)) + (((uint16_t)(sample + (1 << 15))) << 15);
+
+                    int pdm_on = !!(pdm & limit);
+
+                    // Store MSB of accumulator in LSB
                     out = (out >> 1) | (pdm_on << 7);
+
+                    // Store MSB of accumulator in MSB
                     // out = (out << 1) | (pdm_on & 1);
                 }
 
