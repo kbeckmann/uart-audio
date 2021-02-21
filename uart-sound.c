@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 char *tty = "/dev/ttyUSB0";
-int baudrate = 1000000;
+int baudrate = 3000000;
 
 typedef enum {
     MODE_PDM   = 0,
@@ -21,11 +21,11 @@ encoding_mode_t mode;
 int main(int argc, char *argv[])
 {
     if (argc < 5) {
-        printf("Usage: %s <audio.raw> </dev/ttyUART0> <baudrate> <mode>\n"
-               "Audio should use 62500 Hz sample rate, 8 bit mono signed\n",
-               "mode: 0 = MODE_PDM,\n"
-               "      1 = MODE_PWM32,\n"
-               "      2 = MODE_PWM64,\n",
+        printf("Usage: %s <audio.raw> </dev/ttyUART0> <baud rate> <mode>\n"
+               "Audio should use an appropriate sample rate, 16 bit mono signed\n",
+               "mode: 0 = MODE_PDM,   sample rate = baud rate / 10 * 8 / 64\n"
+               "      1 = MODE_PWM32, sample rate = baud rate / 10 * 8 / 32\n"
+               "      2 = MODE_PWM64, sample rate = baud rate / 10 * 8 / 64\n",
                argv[0]);
         return -1;
     }
@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
 
     printf("Read %d bytes from %s. Using %s @%d bps\n", samples, argv[1], tty, baudrate);
 
-    // Ugly, don't judge.
+    // Ugly, please don't judge.
     char cmd[1024];
     snprintf(cmd, 1023, "stty -F %s %d raw -clocal -echo icrnl", tty, baudrate);
     puts(cmd);
@@ -55,22 +55,27 @@ int main(int argc, char *argv[])
 
     int usbdev = open(tty, O_RDWR);
 
-    int bits_per_transfer = 10; // 1 start bit (0) + 8 data bits + 1 stop bit (1)
-    int buflen = baudrate / bits_per_transfer;
+    int bits_per_transfer = 10; // 
+    int buflen = 1024;
     char buf[buflen];
     uint32_t *buf32 = (uint32_t *) buf;
     uint64_t *buf64 = (uint64_t *) buf;
 
-
     /*
 
-    Actual baudrate = (baudrate // 10) * 8
+    UART with 1 start bit and 1 stop bit sends data one byte at a time like this:
 
-    Baudrate:   2 000 000
-    Actual BR:  1 600 000
-    Samplerate:    25 000
-    Bits per sample:   64 (32 + 8 1/0 transitions)
-    Bytes per sample:   8
+    0 D0 D1 D2 D3 D4 D5 D6 D7 1
+    \                          \__ Stop bit
+     \____________________________ Start bit
+
+    Data bitrate = (baudrate // 10) * 8
+
+    Baudrate:      2 000 000
+    Data bitrate:  1 600 000
+    Samplerate:       25 000
+    Bits per sample:      64 (32 + 8 1/0 transitions)
+    Bytes per sample:      8
 
     */
 
@@ -78,7 +83,7 @@ int main(int argc, char *argv[])
     int j = 0;
     int k = 0;
     uint32_t pdm = 0;
-    int bytes_out = 0;
+    int samples_out = 0;
     for (i = 0; i < samples; i++) {
         int16_t sample = audio_buffer[i];
 
@@ -95,10 +100,8 @@ int main(int argc, char *argv[])
                 for (j = 0; j < 8; j++) {
                     if (pdm >= limit) {
                         pdm -= limit;
-                        // pdm = -limit - pdm;
                     } else if (pdm <= -limit) {
                         pdm += limit;
-                        // pdm = limit + pdm;
                     }
 
                     // 9 bit
@@ -120,45 +123,44 @@ int main(int argc, char *argv[])
                 }
 
                 // Byte ordering
-                // int buf_idx = bytes_out + k_iter - k - 1;
-                int buf_idx = bytes_out + k;
+                // int buf_idx = samples_out + k_iter - k - 1;
+                int buf_idx = samples_out + k;
                 buf[buf_idx] = out;
 
                 if (buf_idx == buflen) {
                     write(usbdev, buf, buflen);
-                    bytes_out = 0;
+                    samples_out = 0;
                 }
             }
 
-            bytes_out += k_iter;
+            samples_out += k_iter;
         } else if (mode == MODE_PWM32) {
             // Emulate 32 bit PWM - works ok at 1 000 000 baud
-            // (1000000 // 10 * 8) // 32 = 25000 Hz
+            // 1000000 // 10 * 8 // 32 = 25000 Hz
             // 32 bits = 4 bytes
 
             uint8_t pwm = 16 + (sample >> 11); // [-32768, 32767] => [0, 31]
             uint32_t out = (1ULL << pwm) - 1;
 
-            buf32[bytes_out++] = out;
+            buf32[samples_out++] = out;
 
-            if (bytes_out == buflen / sizeof(uint32_t)) {
+            if (samples_out == buflen / sizeof(uint32_t)) {
                 write(usbdev, buf, buflen);
-                bytes_out = 0;
+                samples_out = 0;
             }
         } else if (mode == MODE_PWM64) {
             // Emulate 64 bit PWM - works ok at 2 000 000 baud
-            // (2000000 // 10 * 8) // 64 = 25000 Hz
+            // 2000000 // 10 * 8 // 64 = 25000 Hz
             // 64 bits = 8 bytes
 
-            // uint8_t pwm = 32 + (sample >> 2); // [-128, 127] => [0, 63]
             uint8_t pwm = 32 + (sample >> 10); // [-32768, 32767] => [0, 63]
             uint64_t out = (1ULL << pwm) - 1;
 
-            buf64[bytes_out++] = out;
+            buf64[samples_out++] = out;
 
-            if (bytes_out == buflen / sizeof(uint64_t)) {
+            if (samples_out == buflen / sizeof(uint64_t)) {
                 write(usbdev, buf, buflen);
-                bytes_out = 0;
+                samples_out = 0;
             }
         }
     }
