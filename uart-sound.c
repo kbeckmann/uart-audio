@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
     Baudrate:      2 000 000
     Data bitrate:  1 600 000
     Samplerate:       25 000
-    Bits per sample:      64 (32 + 8 1/0 transitions)
+    Bits per sample:      64 (64 + 8 implicit 1/0 transitions)
     Bytes per sample:      8
 
     */
@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
         int16_t sample = audio_buffer[i];
 
         if (mode == MODE_PDM) {
-            // Emulate PDM
+            // Encode as PDM
             int k_iter = 8;
             for (k = 0; k < k_iter; k++) {
                 uint8_t out = 0;
@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
 
             samples_out += k_iter;
         } else if (mode == MODE_PWM32) {
-            // Emulate 32 bit PWM - works ok at 1 000 000 baud
+            // Encode as 32 bit PWM - works ok at 1 000 000 baud
             // 1000000 // 10 * 8 // 32 = 25000 Hz
             // 32 bits = 4 bytes
 
@@ -149,7 +149,7 @@ int main(int argc, char *argv[])
                 samples_out = 0;
             }
         } else if (mode == MODE_PWM64) {
-            // Emulate 64 bit PWM - works ok at 2 000 000 baud
+            // Encode as 64 bit PWM - works ok at 2 000 000 baud
             // 2000000 // 10 * 8 // 64 = 25000 Hz
             // 64 bits = 8 bytes
 
